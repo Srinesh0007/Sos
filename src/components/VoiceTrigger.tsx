@@ -189,67 +189,69 @@ export default function VoiceTrigger({ config, onTrigger, onImmediateTrigger, is
       let tempStream: MediaStream | null = null;
 
       // 2. Setup Audio Context (Scream Detection)
-      // We now try to enable it on Android too, but with more caution
-      try {
-         tempStream = await navigator.mediaDevices.getUserMedia({ 
-           audio: {
-             echoCancellation: true,
-             noiseSuppression: false, // We want to hear screams!
-             autoGainControl: true
-           } 
-         });
-         
-         const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-         if (AudioContextClass) {
-           const audioContext = new AudioContextClass();
-           audioContextRef.current = audioContext;
-           const source = audioContext.createMediaStreamSource(tempStream);
-           const analyser = audioContext.createAnalyser();
-           analyser.fftSize = 256;
-           analyserRef.current = analyser;
-           source.connect(analyser);
-   
-           const bufferLength = analyser.frequencyBinCount;
-           const dataArray = new Uint8Array(bufferLength);
-   
-           const checkScream = () => {
-             if (!isListeningRef.current || screamTriggeredRef.current) return;
-             
-             analyser.getByteFrequencyData(dataArray);
-             
-             // Calculate average volume
-             let sum = 0;
-             for (let i = 0; i < bufferLength; i++) {
-               sum += dataArray[i];
-             }
-             const average = sum / bufferLength;
-
-             // Calculate high-frequency energy (screams are often high-pitched)
-             // Each bin is ~187Hz (at 48kHz)
-             // 1.5kHz to 4kHz is roughly bin 8 to 22
-             let highFreqSum = 0;
-             let highFreqCount = 0;
-             for (let i = 8; i < 22; i++) {
-               highFreqSum += dataArray[i];
-               highFreqCount++;
-             }
-             const highFreqAverage = highFreqSum / highFreqCount;
-             
-             // Trigger if overall volume is very high OR high-frequency energy is high
-             // Adjusted thresholds for better sensitivity
-             if (average > 110 || highFreqAverage > 130) { 
-               screamTriggeredRef.current = true;
-               console.log("Scream detected! Vol:", average, "HighFreq:", highFreqAverage);
-               onImmediateTriggerRef.current();
-               return;
-             }
-             
-             requestAnimationFrame(checkScream);
-           };
-           checkScream();
-         }
-      } catch (e) {
-        console.warn('Scream detection init failed:', e);
+      // We skip this on Android because getUserMedia blocks the mic for SpeechRecognition
+      if (!isAndroid) {
+        try {
+           tempStream = await navigator.mediaDevices.getUserMedia({ 
+             audio: {
+               echoCancellation: true,
+               noiseSuppression: false, // We want to hear screams!
+               autoGainControl: true
+             } 
+           });
+           
+           const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+           if (AudioContextClass) {
+             const audioContext = new AudioContextClass();
+             audioContextRef.current = audioContext;
+             const source = audioContext.createMediaStreamSource(tempStream);
+             const analyser = audioContext.createAnalyser();
+             analyser.fftSize = 256;
+             analyserRef.current = analyser;
+             source.connect(analyser);
+     
+             const bufferLength = analyser.frequencyBinCount;
+             const dataArray = new Uint8Array(bufferLength);
+     
+             const checkScream = () => {
+               if (!isListeningRef.current || screamTriggeredRef.current) return;
+               
+               analyser.getByteFrequencyData(dataArray);
+               
+               // Calculate average volume
+               let sum = 0;
+               for (let i = 0; i < bufferLength; i++) {
+                 sum += dataArray[i];
+               }
+               const average = sum / bufferLength;
+  
+               // Calculate high-frequency energy (screams are often high-pitched)
+               // Each bin is ~187Hz (at 48kHz)
+               // 1.5kHz to 4kHz is roughly bin 8 to 22
+               let highFreqSum = 0;
+               let highFreqCount = 0;
+               for (let i = 8; i < 22; i++) {
+                 highFreqSum += dataArray[i];
+                 highFreqCount++;
+               }
+               const highFreqAverage = highFreqSum / highFreqCount;
+               
+               // Trigger if overall volume is very high OR high-frequency energy is high
+               // Adjusted thresholds for better sensitivity
+               if (average > 110 || highFreqAverage > 130) { 
+                 screamTriggeredRef.current = true;
+                 console.log("Scream detected! Vol:", average, "HighFreq:", highFreqAverage);
+                 onImmediateTriggerRef.current();
+                 return;
+               }
+               
+               requestAnimationFrame(checkScream);
+             };
+             checkScream();
+           }
+        } catch (e) {
+          console.warn('Scream detection init failed:', e);
+        }
       }
 
       // 3. Setup Keyword Detection (Web Speech API)

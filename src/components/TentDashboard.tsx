@@ -221,7 +221,18 @@ export default function TentDashboard({ clientId, onClose, onTriggerSOS }: TentD
       audio.srcObject = stream;
       
       // Play explicitly as some browsers block autoplay
-      audio.play().catch(e => console.error('Error playing remote audio', e));
+      const playAudio = () => {
+        audio.play().catch(e => {
+          console.error('Error playing remote audio, retrying on interaction', e);
+          // Retry on next user interaction if blocked
+          const retry = () => {
+            audio.play();
+            window.removeEventListener('click', retry);
+          };
+          window.addEventListener('click', retry);
+        });
+      };
+      playAudio();
     };
 
     if (localStreamRef.current) {

@@ -6,43 +6,27 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 interface GuardianDashboardProps {
+  evidence: Evidence[];
+  connectionStatus: 'connected' | 'disconnected' | 'connecting';
   onClose: () => void;
+  onRefresh: () => void;
 }
 
-export default function GuardianDashboard({ onClose }: GuardianDashboardProps) {
-  const [evidence, setEvidence] = useState<Evidence[]>([]);
+export default function GuardianDashboard({ evidence, connectionStatus, onClose, onRefresh }: GuardianDashboardProps) {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [lastLocation, setLastLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  const fetchEvidence = async () => {
+  const handleRefresh = async () => {
     setLoading(true);
-    try {
-      const res = await fetch('/api/evidence');
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      const data = await res.json();
-      const formattedData = data.map((item: any) => ({
-        ...item,
-        timestamp: new Date(item.timestamp)
-      })).sort((a: any, b: any) => b.timestamp.getTime() - a.timestamp.getTime());
-      setEvidence(formattedData);
-    } catch (err) {
-      console.error("Failed to fetch evidence:", err);
-      // Optionally set empty evidence on error or show a user-friendly message
-      // setEvidence([]); 
-    } finally {
-      setLoading(false);
-    }
+    await onRefresh();
+    setLoading(false);
   };
 
   useEffect(() => {
-    fetchEvidence();
-    // Poll for new evidence every 10 seconds
-    const interval = setInterval(fetchEvidence, 10000);
+    // Poll for new evidence every 15 seconds as a backup to WebSocket
+    const interval = setInterval(onRefresh, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [onRefresh]);
 
   const handleDelete = async (id: string, url: string) => {
     if (!confirm("Are you sure you want to delete this evidence? This action cannot be undone.")) return;
@@ -81,7 +65,7 @@ export default function GuardianDashboard({ onClose }: GuardianDashboardProps) {
 
       const result = await response.json();
       if (result.success) {
-        setEvidence(prev => prev.filter(item => item.id !== id));
+        onRefresh(); // Refresh the list from App.tsx
       } else {
         alert("Failed to delete evidence: " + (result.error || "Unknown error"));
       }
@@ -153,7 +137,16 @@ export default function GuardianDashboard({ onClose }: GuardianDashboardProps) {
           </div>
           <div>
             <h1 className="text-xl font-bold">Guardian Dashboard</h1>
-            <p className="text-xs text-zinc-400">Live Evidence Feed</p>
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${
+                connectionStatus === 'connected' ? 'bg-green-500' : 
+                connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+              }`} />
+              <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
+                {connectionStatus === 'connected' ? 'SOS Network Live' : 
+                 connectionStatus === 'connecting' ? 'Connecting...' : 'Network Offline'}
+              </p>
+            </div>
           </div>
         </div>
         <button 
@@ -169,7 +162,7 @@ export default function GuardianDashboard({ onClose }: GuardianDashboardProps) {
         {/* Actions */}
         <div className="flex gap-4">
           <button 
-            onClick={fetchEvidence}
+            onClick={handleRefresh}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-800 rounded-lg hover:bg-zinc-700 transition-colors disabled:opacity-50"
           >

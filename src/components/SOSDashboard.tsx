@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, Camera, Mic, MapPin, Shield, Users, Settings, History, Activity, Play, FileAudio, Image as ImageIcon, CheckCircle2, Download, Trash2, Video, X, AlertTriangle, MessageSquare, Send, Sparkles, Loader2 } from 'lucide-react';
+import { Bell, Camera, Mic, MapPin, Shield, Users, Settings, History, Activity, Play, FileAudio, Image as ImageIcon, CheckCircle2, Download, Trash2, Video, X, AlertTriangle, MessageSquare, Send, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { AppConfig, EmergencyContact, Evidence } from '../types';
 import { GoogleGenAI } from "@google/genai";
 
 interface SOSDashboardProps {
   config: AppConfig;
   evidence: Evidence[];
+  micStatus: 'active' | 'inactive' | 'error' | 'denied';
+  lastHeardSpeech?: string;
   onUpdateConfig: (newConfig: AppConfig) => void;
   onDeleteEvidence: (id: string, url: string) => void;
   onDeleteAllEvidence: () => void;
@@ -124,11 +126,19 @@ function EvidenceItem({ item, onDelete, onPlayVideo }: { item: Evidence, onDelet
   );
 }
 
-export default function SOSDashboard({ config, evidence, onUpdateConfig, onDeleteEvidence, onDeleteAllEvidence, onClose, onTestAlarm }: SOSDashboardProps & { onTestAlarm: () => void }) {
+export default function SOSDashboard({ config, evidence, micStatus, lastHeardSpeech, onUpdateConfig, onDeleteEvidence, onDeleteAllEvidence, onClose, onTestAlarm, onRestartMic }: SOSDashboardProps & { onTestAlarm: () => void, onRestartMic: () => void }) {
   const [activeTab, setActiveTab] = useState<'status' | 'contacts' | 'triggers' | 'evidence' | 'settings' | 'ai'>('status');
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [showSaved, setShowSaved] = useState(false);
+  const [isRestartingMic, setIsRestartingMic] = useState(false);
+  const isSpeechSupported = !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  const handleRestartMic = () => {
+    setIsRestartingMic(true);
+    onRestartMic();
+    setTimeout(() => setIsRestartingMic(false), 2000);
+  };
   
   // AI Chat State
   const [aiMessages, setAiMessages] = useState<{ role: 'user' | 'ai', text: string }[]>([
@@ -287,11 +297,43 @@ export default function SOSDashboard({ config, evidence, onUpdateConfig, onDelet
         {activeTab === 'status' && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
-              <StatusCard icon={Mic} label="Audio Detection" active={config.aiDetection.voice} />
+              <StatusCard 
+                icon={Mic} 
+                label="Voice Engine" 
+                active={config.aiDetection.voice} 
+                status={micStatus === 'active' ? 'Listening' : micStatus === 'denied' ? 'Permission Denied' : micStatus === 'error' ? 'Engine Error' : 'Inactive'}
+                statusColor={micStatus === 'active' ? 'text-emerald-500' : micStatus === 'denied' || micStatus === 'error' ? 'text-red-500' : 'text-zinc-600'}
+                showPulse={micStatus === 'active'}
+              />
               <StatusCard icon={Activity} label="Motion Analysis" active={config.aiDetection.motion} />
               <StatusCard icon={Camera} label="Auto Evidence" active={config.evidence.camera} />
               <StatusCard icon={MapPin} label="Live Tracking" active={true} />
             </div>
+
+            {micStatus === 'denied' && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
+                <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-red-500 uppercase tracking-wider">Mic Permission Denied</p>
+                  <p className="text-xs text-red-500/80 leading-relaxed">
+                    Voice detection is blocked. Please tap the <strong>lock icon</strong> in your browser's address bar and reset the microphone permission to "Allow".
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!isSpeechSupported && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
+                <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-red-500 uppercase tracking-wider">Browser Not Supported</p>
+                  <p className="text-xs text-red-500/80 leading-relaxed">
+                    Your browser does not support the <strong>Web Speech API</strong>. 
+                    Voice detection only works in <strong>Chrome</strong> (Android/Desktop) and <strong>Safari</strong> (iOS/macOS).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {!window.isSecureContext && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3">
@@ -309,16 +351,51 @@ export default function SOSDashboard({ config, evidence, onUpdateConfig, onDelet
 
             <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
               <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 mb-4">System Actions</h3>
-              <button 
-                onClick={onTestAlarm}
-                className="w-full py-3 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2"
-              >
-                <Bell size={18} />
-                Test Emergency Alarm
-              </button>
+              <div className="space-y-3">
+                <button 
+                  onClick={onTestAlarm}
+                  className="w-full py-3 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2"
+                >
+                  <Bell size={18} />
+                  Test Emergency Alarm
+                </button>
+                <button 
+                  onClick={handleRestartMic}
+                  disabled={isRestartingMic}
+                  className="w-full py-3 bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-xl font-bold uppercase tracking-wider hover:bg-blue-500 hover:text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw size={18} className={isRestartingMic ? "animate-spin" : ""} />
+                  {isRestartingMic ? "Restarting Mic..." : "Force Restart Mic Engine"}
+                </button>
+              </div>
               <p className="text-[10px] text-zinc-500 mt-2 text-center">
-                This will trigger the siren on THIS device only. Use to verify audio permissions.
+                Use "Force Restart" if voice detection seems unresponsive.
               </p>
+            </div>
+
+            <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-500 mb-4">Voice Engine Debug</h3>
+              <div className="space-y-4">
+                <div className="p-4 bg-black rounded-xl border border-zinc-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Last Heard Phrase</p>
+                  <p className="text-sm font-mono text-emerald-500 italic">
+                    {lastHeardSpeech ? `"${lastHeardSpeech}"` : "Waiting for speech..."}
+                  </p>
+                </div>
+                <div className="p-4 bg-black rounded-xl border border-zinc-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Active Keywords</p>
+                  <div className="flex flex-wrap gap-2">
+                    {config.aiDetection.customVoiceKeyword && (
+                      <span className="px-2 py-1 bg-orange-500/10 text-orange-500 rounded text-[10px] font-bold border border-orange-500/20">
+                        {config.aiDetection.customVoiceKeyword}
+                      </span>
+                    )}
+                    <span className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded text-[10px] font-bold">help</span>
+                    <span className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded text-[10px] font-bold">emergency</span>
+                    <span className="px-2 py-1 bg-zinc-800 text-zinc-400 rounded text-[10px] font-bold">police</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
@@ -694,13 +771,24 @@ export default function SOSDashboard({ config, evidence, onUpdateConfig, onDelet
   );
 }
 
-function StatusCard({ icon: Icon, label, active }: { icon: any, label: string, active: boolean }) {
+function StatusCard({ icon: Icon, label, active, status, statusColor, showPulse }: { icon: any, label: string, active: boolean, status?: string, statusColor?: string, showPulse?: boolean }) {
   return (
     <div className={`p-4 rounded-2xl border ${active ? 'bg-orange-500/10 border-orange-500/20' : 'bg-zinc-900 border-zinc-800'}`}>
-      <Icon size={20} className={active ? 'text-orange-500' : 'text-zinc-500'} />
+      <div className="flex items-center justify-between">
+        <Icon size={20} className={active ? 'text-orange-500' : 'text-zinc-500'} />
+        {showPulse && (
+          <div className="flex gap-1">
+            <motion.div 
+              animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+            />
+          </div>
+        )}
+      </div>
       <p className="mt-2 text-sm font-medium">{label}</p>
-      <p className={`text-[10px] uppercase font-bold tracking-wider ${active ? 'text-orange-500' : 'text-zinc-600'}`}>
-        {active ? 'Active' : 'Disabled'}
+      <p className={`text-[10px] uppercase font-bold tracking-wider ${statusColor || (active ? 'text-orange-500' : 'text-zinc-600')}`}>
+        {status || (active ? 'Active' : 'Disabled')}
       </p>
     </div>
   );

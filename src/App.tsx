@@ -378,35 +378,10 @@ export default function App() {
     }
     setSosStatus('dead-man-switch');
     setMode('sos');
-    setNotificationStatus('sending');
-    
-    // Send notifications if location is available
-    if (location && config.emergencyContacts.length > 0) {
-      fetch('/api/sos/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contacts: config.emergencyContacts,
-          location,
-          message: 'StealthSOS User',
-          senderId: clientId
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setNotificationStatus('sent');
-        else setNotificationStatus('failed');
-      })
-      .catch(err => {
-        console.error("Failed to send SOS notifications:", err);
-        setNotificationStatus('failed');
-      });
-    } else {
-      setNotificationStatus('failed');
-    }
-  }, [location, config.emergencyContacts]);
+    // We don't send notifications yet; we wait for handleSOSComplete
+  }, []);
 
-  const triggerImmediateSOS = useCallback(() => {
+  const triggerImmediateSOS = useCallback((customMessage?: string) => {
     if (navigator.vibrate) {
       // Stronger vibration for immediate trigger
       navigator.vibrate([200, 100, 200]); 
@@ -416,29 +391,25 @@ export default function App() {
     setNotificationStatus('sending');
 
     // Send notifications immediately
-    if (location && config.emergencyContacts.length > 0) {
-      fetch('/api/sos/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contacts: config.emergencyContacts,
-          location,
-          message: 'StealthSOS User (IMMEDIATE TRIGGER)',
-          senderId: clientId
-        })
+    fetch('/api/sos/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contacts: config.emergencyContacts || [],
+        location,
+        message: customMessage || 'StealthSOS User (IMMEDIATE TRIGGER)',
+        senderId: clientId
       })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setNotificationStatus('sent');
-        else setNotificationStatus('failed');
-      })
-      .catch(err => {
-        console.error("Failed to send SOS notifications:", err);
-        setNotificationStatus('failed');
-      });
-    } else {
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) setNotificationStatus('sent');
+      else setNotificationStatus('failed');
+    })
+    .catch(err => {
+      console.error("Failed to send SOS notifications:", err);
       setNotificationStatus('failed');
-    }
+    });
   }, [location, config.emergencyContacts]);
 
   const handleCalculatorCode = (code: string) => {
@@ -471,9 +442,31 @@ export default function App() {
     }
   };
 
-  const handleSOSComplete = () => {
+  const handleSOSComplete = useCallback(() => {
     setSosStatus('active');
-  };
+    setNotificationStatus('sending');
+    
+    // Send notifications
+    fetch('/api/sos/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contacts: config.emergencyContacts || [],
+        location,
+        message: 'StealthSOS User',
+        senderId: clientId
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) setNotificationStatus('sent');
+      else setNotificationStatus('failed');
+    })
+    .catch(err => {
+      console.error("Failed to send SOS notifications:", err);
+      setNotificationStatus('failed');
+    });
+  }, [location, config.emergencyContacts, clientId]);
 
   const handleDeleteEvidence = async (id: string, url: string) => {
     // Remove hash fragments and query params before getting the filename
@@ -618,8 +611,7 @@ export default function App() {
               clientId={clientId} 
               onClose={() => setMode('calculator')} 
               onTriggerSOS={(msg) => {
-                triggerImmediateSOS();
-                // Optionally customize message
+                triggerImmediateSOS(msg);
               }}
             />
           </motion.div>

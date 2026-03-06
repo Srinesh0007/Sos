@@ -289,9 +289,10 @@ async function startServer() {
       const client = twilio(accountSid, authToken);
       const results = [];
 
-      for (const contact of contacts) {
+      for (const contact of (contacts || [])) {
         try {
-          const body = `EMERGENCY SOS from ${message || 'StealthSOS'}. Location: https://www.google.com/maps?q=${location.lat},${location.lng}`;
+          const locStr = location ? `Location: https://www.google.com/maps?q=${location.lat},${location.lng}` : 'Location: Unknown';
+          const body = `EMERGENCY SOS from ${message || 'StealthSOS'}. ${locStr}`;
           const msg = await client.messages.create({
             body,
             from: fromNumber,
